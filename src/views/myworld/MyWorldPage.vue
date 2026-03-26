@@ -168,13 +168,13 @@ const toolCategories = [
   { nameKey: 'myworld.toolCategories.runtime', tools: ['exec', 'process'] },
   { nameKey: 'myworld.toolCategories.web', tools: ['web_search', 'web_fetch'] },
   { nameKey: 'myworld.toolCategories.memory', tools: ['memory_search', 'memory_get'] },
-  { nameKey: 'myworld.toolCategories.sessions', tools: ['sessions_list', 'sessions_history', 'sessions_send', 'sessions_spawn', 'subagents', 'session_status'] },
+  { nameKey: 'myworld.toolCategories.sessions', tools: ['sessions_list', 'sessions_history', 'sessions_send', 'sessions_spawn', 'sessions_yield', 'subagents', 'session_status'] },
   { nameKey: 'myworld.toolCategories.ui', tools: ['browser', 'canvas'] },
   { nameKey: 'myworld.toolCategories.messaging', tools: ['message'] },
   { nameKey: 'myworld.toolCategories.automation', tools: ['cron', 'gateway'] },
   { nameKey: 'myworld.toolCategories.nodes', tools: ['nodes'] },
   { nameKey: 'myworld.toolCategories.agents', tools: ['agents_list'] },
-  { nameKey: 'myworld.toolCategories.media', tools: ['image', 'tts'] },
+  { nameKey: 'myworld.toolCategories.media', tools: ['image', 'image_generate', 'tts'] },
 ]
 
 const channelOptions = [

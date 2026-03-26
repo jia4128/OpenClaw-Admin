@@ -115,7 +115,7 @@ const newBindingForm = ref({
   agentId: '',
   channel: '',
   peerId: '',
-  peerKind: 'user' as 'user' | 'group',
+  peerKind: 'group' as 'direct' | 'group' | 'channel' | 'dm' | 'acp',
 })
 
 const scenarios = computed(() => {
@@ -683,7 +683,7 @@ function getExistingBindingsForAgent(agentId: string): AgentBinding[] {
         agentId,
         channel: binding.match.channel,
         peerId: binding.match.peer?.id || '',
-        peerKind: (binding.match.peer?.kind as 'user' | 'group') || 'group',
+        peerKind: (binding.match.peer?.kind as 'direct' | 'group' | 'channel' | 'dm' | 'acp') || 'group',
       })
     }
   }
@@ -710,7 +710,7 @@ function handleOpenAddBinding() {
     agentId: '',
     channel: '',
     peerId: '',
-    peerKind: 'user',
+    peerKind: 'group',
   }
   bindingIndexToEdit.value = -1
   showEditBindingModal.value = true
@@ -721,7 +721,7 @@ function handleOpenEditBinding(binding: AgentBinding, index: number) {
     agentId: binding.agentId,
     channel: binding.channel,
     peerId: binding.peerId || '',
-    peerKind: binding.peerKind || 'user',
+    peerKind: binding.peerKind || 'group',
   }
   bindingToEdit.value = binding
   bindingIndexToEdit.value = index
@@ -745,7 +745,7 @@ function handleOpenEditBindingForMember(agentId: string) {
       agentId,
       channel: '',
       peerId: '',
-      peerKind: 'user',
+      peerKind: 'group',
     }
     bindingToEdit.value = null
     bindingIndexToEdit.value = -1
@@ -1180,7 +1180,10 @@ async function updateTeamConfig(scenario: WizardScenario) {
               v-model:value="binding.peerKind"
               :options="[
                 { label: 'Group', value: 'group' },
-                { label: 'User', value: 'user' },
+                { label: 'Direct', value: 'direct' },
+                { label: 'Channel', value: 'channel' },
+                { label: 'DM', value: 'dm' },
+                { label: 'ACP', value: 'acp' },
               ]"
               style="width: 80px;"
             />

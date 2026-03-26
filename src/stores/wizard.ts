@@ -80,7 +80,7 @@ export interface AgentBinding {
   agentId: string
   channel: string
   peerId?: string
-  peerKind?: 'user' | 'group'
+  peerKind?: 'direct' | 'group' | 'channel' | 'dm' | 'acp'
   peerName?: string
 }
 

@@ -73,6 +73,7 @@ const wizardStep = ref<'scenario' | 'agents' | 'tasks' | 'bindings' | 'confirm' 
 const scenarioName = ref('')
 const scenarioDescription = ref('')
 const agentSelectionMode = ref<'existing' | 'ai_create'>('existing')
+const workspaceMode = ref<'independent' | 'shared'>('independent')
 const selectedAgents = ref<string[]>([])
 const aiAgentPrompt = ref('')
 const aiGeneratedAgents = ref<GeneratedAgent[]>([])
@@ -195,6 +196,7 @@ function resetForm() {
   scenarioName.value = ''
   scenarioDescription.value = ''
   agentSelectionMode.value = 'existing'
+  workspaceMode.value = 'independent'
   selectedAgents.value = []
   aiAgentPrompt.value = ''
   aiGeneratedAgents.value = []
@@ -1451,10 +1453,18 @@ async function executeCreateAgent(agentId: string) {
     return
   }
   
+  let workspace: string
+  if (workspaceMode.value === 'shared' && aiGeneratedAgents.value.length > 0 && aiGeneratedAgents.value[0]) {
+    const teamLeader = aiGeneratedAgents.value[0]
+    workspace = `~/.openclaw/workspace-${teamLeader.id}`
+  } else {
+    workspace = `~/.openclaw/workspace-${agent.id}`
+  }
+  
   await agentStore.addAgent({
     id: agent.id,
     name: agent.name,
-    workspace: `~/.openclaw/workspace-${agent.id}`,
+    workspace,
   })
   
   if (agent.agentsMd) {
@@ -1656,7 +1666,7 @@ onMounted(() => {
     :close-on-esc="false"
     preset="card"
     :title="t('pages.office.wizard.title')"
-    style="width: 900px; max-width: calc(100vw - 32px); max-height: calc(100vh - 100px);"
+    style="width: 900px; max-width: calc(100vw - 32px); max-height: 99vh;"
     @update:show="(v) => !v && handleClose()"
   >
     <div class="wizard-container">
@@ -1757,6 +1767,33 @@ onMounted(() => {
             <NText depth="3" style="display: block; margin-bottom: 12px;">
               {{ t('pages.office.wizard.aiCreateHint') }}
             </NText>
+            
+            <div class="workspace-mode-section">
+              <NText depth="3" style="font-size: 12px; display: block; margin-bottom: 8px;">
+                {{ t('pages.office.wizard.workspaceMode') }}
+              </NText>
+              <NRadioGroup v-model:value="workspaceMode" style="margin-bottom: 12px;">
+                <NSpace>
+                  <NRadio value="independent">
+                    <NTooltip>
+                      <template #trigger>
+                        <span>{{ t('pages.office.wizard.workspaceIndependent') }}</span>
+                      </template>
+                      {{ t('pages.office.wizard.workspaceIndependentHint') }}
+                    </NTooltip>
+                  </NRadio>
+                  <NRadio value="shared">
+                    <NTooltip>
+                      <template #trigger>
+                        <span>{{ t('pages.office.wizard.workspaceShared') }}</span>
+                      </template>
+                      {{ t('pages.office.wizard.workspaceSharedHint') }}
+                    </NTooltip>
+                  </NRadio>
+                </NSpace>
+              </NRadioGroup>
+            </div>
+            
             <div class="ai-prompt-input">
               <NInput
                 v-model:value="aiAgentPrompt"
@@ -1989,7 +2026,10 @@ onMounted(() => {
                   v-model:value="binding.peerKind"
                   :options="[
                     { label: 'Group', value: 'group' },
-                    { label: 'User', value: 'user' },
+                    { label: 'Direct', value: 'direct' },
+                    { label: 'Channel', value: 'channel' },
+                    { label: 'DM', value: 'dm' },
+                    { label: 'ACP', value: 'acp' },
                   ]"
                   style="width: 100px;"
                 />
@@ -2005,7 +2045,7 @@ onMounted(() => {
         </div>
 
         <div v-else-if="wizardStep === 'confirm'" class="wizard-step-panel wizard-step-confirm">
-          <NScrollbar style="max-height: 380px; padding-right: 4px;">
+          <NScrollbar style="max-height: 390px; padding-right: 4px;">
             <NText strong style="font-size: 16px; display: block; margin-bottom: 16px;">
               {{ t('pages.office.wizard.confirmTitle') }}
             </NText>
@@ -2110,7 +2150,7 @@ onMounted(() => {
             </NText>
           </div>
 
-          <NScrollbar style="max-height: 320px; padding-right: 4px;">
+          <NScrollbar style="max-height: 390px; padding-right: 4px;">
             <div class="execution-tasks">
               <div
                 v-for="task in executionTasks"
@@ -2194,7 +2234,7 @@ onMounted(() => {
 
 .wizard-content {
   min-height: 280px;
-  max-height: 400px;
+  max-height: 390px;
 }
 
 .wizard-step-panel {
@@ -2273,6 +2313,13 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.workspace-mode-section {
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
 }
 
 .ai-prompt-input {

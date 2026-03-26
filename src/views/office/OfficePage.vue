@@ -48,6 +48,7 @@ import { useOfficeStore } from '@/stores/office'
 import { useAgentStore } from '@/stores/agent'
 import { useChatStore } from '@/stores/chat'
 import { useWizardStore } from '@/stores/wizard'
+import { useConfigStore } from '@/stores/config'
 import { useResizable } from '@/composables/useResizable'
 import { formatRelativeTime } from '@/utils/format'
 import ScenarioWizard from '@/components/office/ScenarioWizard.vue'
@@ -64,6 +65,7 @@ const officeStore = useOfficeStore()
 const agentStore = useAgentStore()
 const chatStore = useChatStore()
 const wizardStore = useWizardStore()
+const configStore = useConfigStore()
 const message = useMessage()
 
 const sidebarRef = ref<HTMLElement | null>(null)
@@ -129,11 +131,78 @@ const toolsForm = ref({
   deny: [] as string[],
 })
 
+const toolCategories = [
+  {
+    nameKey: 'pages.agents.form.toolCategories.files',
+    tools: ['read', 'write', 'edit', 'apply_patch'],
+  },
+  {
+    nameKey: 'pages.agents.form.toolCategories.runtime',
+    tools: ['exec', 'process'],
+  },
+  {
+    nameKey: 'pages.agents.form.toolCategories.web',
+    tools: ['web_search', 'web_fetch'],
+  },
+  {
+    nameKey: 'pages.agents.form.toolCategories.memory',
+    tools: ['memory_search', 'memory_get'],
+  },
+  {
+    nameKey: 'pages.agents.form.toolCategories.sessions',
+    tools: ['sessions_list', 'sessions_history', 'sessions_send', 'sessions_spawn', 'sessions_yield', 'subagents', 'session_status'],
+  },
+  {
+    nameKey: 'pages.agents.form.toolCategories.ui',
+    tools: ['browser', 'canvas'],
+  },
+  {
+    nameKey: 'pages.agents.form.toolCategories.messaging',
+    tools: ['message'],
+  },
+  {
+    nameKey: 'pages.agents.form.toolCategories.automation',
+    tools: ['cron', 'gateway'],
+  },
+  {
+    nameKey: 'pages.agents.form.toolCategories.nodes',
+    tools: ['nodes'],
+  },
+  {
+    nameKey: 'pages.agents.form.toolCategories.agents',
+    tools: ['agents_list'],
+  },
+  {
+    nameKey: 'pages.agents.form.toolCategories.media',
+    tools: ['image', 'image_generate', 'tts'],
+  },
+]
+
 const modelOptions = computed(() => {
-  return agentStore.models.map((model) => ({
-    label: model.label || model.id,
-    value: model.id,
-  }))
+  const options: Array<{ label: string; value: string }> = []
+  const config = configStore.config
+  const providers = config?.models?.providers || {}
+  
+  for (const [providerId, provider] of Object.entries(providers)) {
+    if (!provider || typeof provider !== 'object') continue
+    const providerConfig = provider as Record<string, unknown>
+    const models = providerConfig.models
+    if (!Array.isArray(models)) continue
+    
+    for (const model of models) {
+      if (!model || typeof model !== 'object') continue
+      const modelConfig = model as Record<string, unknown>
+      const modelId = (typeof modelConfig.id === 'string' && modelConfig.id.trim()) || ''
+      if (!modelId) continue
+      const label = `${providerId}/${modelId}`
+      options.push({
+        label,
+        value: label,
+      })
+    }
+  }
+  
+  return options.sort((a, b) => a.label.localeCompare(b.label))
 })
 
 const agentOptions = computed(() => {
@@ -155,6 +224,9 @@ const channelOptionsForCreate = computed(() => {
 })
 
 async function loadData() {
+  if (!configStore.config) {
+    await configStore.fetchConfig()
+  }
   await officeStore.loadOfficeData()
 }
 
@@ -943,6 +1015,35 @@ watch(
               }"
             />
           </NSpace>
+        </div>
+
+        <NDivider style="margin: 8px 0;" />
+
+        <div>
+          <NText depth="3" style="font-size: 12px; margin-bottom: 8px; display: block;">
+            {{ t('pages.agents.form.commonTools') }}
+          </NText>
+          <NSpace vertical size="small">
+            <div v-for="category in toolCategories" :key="category.nameKey">
+              <NText depth="3" style="font-size: 11px; margin-right: 8px;">{{ t(category.nameKey) }}:</NText>
+              <NSpace size="small" style="margin-top: 4px;">
+                <NButton
+                  v-for="tool in category.tools"
+                  :key="tool"
+                  size="tiny"
+                  :type="toolsForm.allow.includes(tool) ? 'success' : toolsForm.deny.includes(tool) ? 'error' : 'default'"
+                  :disabled="toolsForm.allow.includes(tool) || toolsForm.deny.includes(tool)"
+                  @click="addToolToAllow(tool)"
+                  @contextmenu.prevent="addToolToDeny(tool)"
+                >
+                  {{ tool }}
+                </NButton>
+              </NSpace>
+            </div>
+          </NSpace>
+          <NText depth="3" style="font-size: 11px; margin-top: 8px; display: block;">
+            {{ t('pages.agents.form.toolsHint') }}
+          </NText>
         </div>
       </NSpace>
       <template #footer>

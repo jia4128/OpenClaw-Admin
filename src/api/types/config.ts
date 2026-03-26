@@ -115,7 +115,7 @@ export interface Binding {
   match?: {
     channel: string
     peer?: {
-      kind: 'user' | 'group'
+      kind: 'direct' | 'group' | 'channel' | 'dm' | 'acp'
       id: string
     }
   }

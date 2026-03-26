@@ -46,6 +46,7 @@ import {
 import { useI18n } from "vue-i18n";
 import { useAgentStore } from "@/stores/agent";
 import { useSessionStore } from "@/stores/session";
+import { useConfigStore } from "@/stores/config";
 import { formatRelativeTime } from "@/utils/format";
 import type { AgentInfo, AgentIdentity } from "@/api/types";
 
@@ -54,6 +55,7 @@ const message = useMessage();
 const dialog = useDialog();
 const agentStore = useAgentStore();
 const sessionStore = useSessionStore();
+const configStore = useConfigStore();
 
 const showCreateModal = ref(false);
 const showEditModal = ref(false);
@@ -105,6 +107,7 @@ const commonTools = [
   "sessions_history",
   "sessions_send",
   "sessions_spawn",
+  "sessions_yield",
   "subagents",
   "session_status",
   "browser",
@@ -115,6 +118,7 @@ const commonTools = [
   "nodes",
   "agents_list",
   "image",
+  "image_generate",
   "tts",
 ];
 
@@ -142,6 +146,7 @@ const toolCategories = [
       "sessions_history",
       "sessions_send",
       "sessions_spawn",
+      "sessions_yield",
       "subagents",
       "session_status",
     ],
@@ -168,7 +173,7 @@ const toolCategories = [
   },
   {
     nameKey: "pages.agents.form.toolCategories.media",
-    tools: ["image", "tts"],
+    tools: ["image", "image_generate", "tts"],
   },
 ];
 
@@ -455,6 +460,9 @@ function formatTokens(num: number): string {
 async function loadData() {
   await agentStore.fetchAgents();
   await agentStore.fetchModels();
+  if (!configStore.config) {
+    await configStore.fetchConfig();
+  }
   if (sessionStore.sessions.length === 0) {
     await sessionStore.fetchSessions();
   }
@@ -617,10 +625,31 @@ async function handleSetTools() {
 }
 
 const modelOptions = computed(() => {
-  return agentStore.models.map((m) => ({
-    label: m.label || m.id,
-    value: m.id,
-  }));
+  const options: Array<{ label: string; value: string }> = [];
+  const config = configStore.config;
+  const providers = config?.models?.providers || {};
+
+  for (const [providerId, provider] of Object.entries(providers)) {
+    if (!provider || typeof provider !== "object") continue;
+    const providerConfig = provider as Record<string, unknown>;
+    const models = providerConfig.models;
+    if (!Array.isArray(models)) continue;
+
+    for (const model of models) {
+      if (!model || typeof model !== "object") continue;
+      const modelConfig = model as Record<string, unknown>;
+      const modelId =
+        (typeof modelConfig.id === "string" && modelConfig.id.trim()) || "";
+      if (!modelId) continue;
+      const label = `${providerId}/${modelId}`;
+      options.push({
+        label,
+        value: label,
+      });
+    }
+  }
+
+  return options.sort((a, b) => a.label.localeCompare(b.label));
 });
 
 const totalSessions = computed(() => {
@@ -650,9 +679,6 @@ function formatTokenTotalK(total: number): string {
   return `${text}K`;
 }
 
-/**
- * Page initialization - load initial data on demand.
- */
 onMounted(() => {
   console.log("[AgentsPage] Mounted - loading initial data");
   loadData();
