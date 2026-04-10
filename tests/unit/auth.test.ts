@@ -116,7 +116,7 @@ describe('Auth Store - Unit Tests', () => {
       const store = useAuthStore()
       // Pre-set token via localStorage (simulating prior login)
       localStorage.setItem('auth_token', 'my-token')
-      store.token.value = 'my-token'
+      store.setToken('my-token')
       
       const originalFetch = globalThis.fetch
       let logoutCalled = false
@@ -140,7 +140,7 @@ describe('Auth Store - Unit Tests', () => {
   describe('checkAuth', () => {
     it('returns true for valid token', async () => {
       const store = useAuthStore()
-      store.token.value = 'valid-session'
+      store.setToken('valid-session')
       
       const originalFetch = globalThis.fetch
       globalThis.fetch = async () => {
@@ -163,7 +163,7 @@ describe('Auth Store - Unit Tests', () => {
 
     it('returns false and clears token on 401', async () => {
       const store = useAuthStore()
-      store.token.value = 'invalid-token'
+      store.setToken('invalid-token')
       
       const originalFetch = globalThis.fetch
       globalThis.fetch = async () => {
@@ -190,7 +190,7 @@ describe('Auth Store - Unit Tests', () => {
 
     it('token persists across store instances', () => {
       const store1 = useAuthStore()
-      store1.token.value = 'shared-token'
+      store1.setToken('shared-token')
       
       const store2 = useAuthStore()
       expect(store2.token).toBe('shared-token')

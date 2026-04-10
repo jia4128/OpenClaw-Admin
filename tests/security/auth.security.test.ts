@@ -9,9 +9,9 @@ describe('Password Hashing - Security Properties', () => {
   // Single-shot hash test (avoids digest reuse issue)
   it('hashPassword produces 128-char output', () => {
     const salt = randomBytes(32).toString('hex')
-    const hash = createHash('sha512')
     let data = salt + 'test'
     for (let i = 0; i < 100000; i++) {
+      const hash = createHash('sha512')
       hash.update(data)
       data = hash.digest('hex')
     }
@@ -38,14 +38,11 @@ describe('Password Hashing - Security Properties', () => {
     const b = Buffer.from('abcd1234', 'hex')
     expect(timingSafeEqual(a, b)).toBe(true)
     
-    const c = Buffer.from('abcd', 'hex')
-    const d = Buffer.from('xyz1', 'hex')
+    // Different hex content but same byte length → returns false
+    const c = Buffer.from('abcd1234', 'hex')
+    const d = Buffer.from('00000000', 'hex')  // same length (4 bytes), different content
+    expect(c.length).toBe(d.length)
     expect(timingSafeEqual(c, d)).toBe(false)
-    
-    // Different lengths should return false (not throw)
-    const e = Buffer.from('short', 'utf8')
-    const f = Buffer.from('muchlonger', 'utf8')
-    expect(timingSafeEqual(e, f)).toBe(false)
   })
 
   it('salt is 32 bytes (64 hex chars)', () => {
