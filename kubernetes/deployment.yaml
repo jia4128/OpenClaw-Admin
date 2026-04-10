@@ -1,0 +1,250 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openclaw-admin
+  labels:
+    name: openclaw-admin
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openclaw-admin-config
+  namespace: openclaw-admin
+data:
+  NODE_ENV: "production"
+  PORT: "10001"
+  LOG_LEVEL: "INFO"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openclaw-admin-secrets
+  namespace: openclaw-admin
+type: Opaque
+stringData:
+  DATABASE_URL: "mysql://user:password@mysql:3306/openclaw_admin"
+  JWT_SECRET: "change-this-secret-key"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openclaw-admin
+  namespace: openclaw-admin
+  labels:
+    app: openclaw-admin
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: openclaw-admin
+  template:
+    metadata:
+      labels:
+        app: openclaw-admin
+    spec:
+      containers:
+      - name: openclaw-admin
+        image: ghcr.io/your-org/ai-work:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 10001
+          name: http
+        env:
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: openclaw-admin-config
+              key: NODE_ENV
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: openclaw-admin-config
+              key: PORT
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: openclaw-admin-config
+              key: LOG_LEVEL
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: openclaw-admin-secrets
+              key: DATABASE_URL
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: openclaw-admin-secrets
+              key: JWT_SECRET
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 10001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 10001
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: logs-volume
+          mountPath: /app/logs
+        - name: data-volume
+          mountPath: /app/data
+        - name: backups-volume
+          mountPath: /app/backups
+      volumes:
+      - name: logs-volume
+        persistentVolumeClaim:
+          claimName: openclaw-admin-logs-pvc
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: openclaw-admin-data-pvc
+      - name: backups-volume
+        persistentVolumeClaim:
+          claimName: openclaw-admin-backups-pvc
+      imagePullSecrets:
+      - name: ghcr-secret
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openclaw-admin-service
+  namespace: openclaw-admin
+spec:
+  selector:
+    app: openclaw-admin
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 10001
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openclaw-admin-logs-pvc
+  namespace: openclaw-admin
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openclaw-admin-data-pvc
+  namespace: openclaw-admin
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openclaw-admin-backups-pvc
+  namespace: openclaw-admin
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: standard
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openclaw-admin-ingress
+  namespace: openclaw-admin
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - ai-work.example.com
+    secretName: openclaw-admin-tls
+  rules:
+  - host: ai-work.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-admin-service
+            port:
+              number: 80
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: openclaw-admin-hpa
+  namespace: openclaw-admin
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: openclaw-admin
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: openclaw-admin-monitor
+  namespace: openclaw-admin
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: openclaw-admin
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 15s

@@ -17,7 +17,7 @@
 import { computed } from 'vue'
 import { NIcon } from 'naive-ui'
 import { 
-  TrendingUp, TrendingDown, Min, 
+  TrendingUp, TrendingDown,
   People, CheckmarkCircle, Warning,
   Time, Calendar
 } from '@vicons/ionicons5'
@@ -63,7 +63,7 @@ const trendClass = computed(() => `trend-${props.trend}`)
 const trendIcon = computed(() => {
   if (props.trend === 'up') return TrendingUp
   if (props.trend === 'down') return TrendingDown
-  return Min
+  return TrendingUp // 默认使用向上图标替代 Min
 })
 
 const trendText = computed(() => {

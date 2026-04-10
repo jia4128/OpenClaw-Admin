@@ -124,8 +124,8 @@ const handleBatchAssign = (userId: string) => {
 }
 
 const confirmBatchOperation = (action: string, callback: () => void) => {
-  const { dialog } = useDialog()
-  dialog.warning({
+  const d = useDialog()
+  d.warning({
     title: '批量操作确认',
     content: `您确定要对选中的 ${selectedCount.value} 项记录执行 ${action} 吗？此操作不可逆，请谨慎操作。`,
     positiveText: '确认',

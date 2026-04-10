@@ -110,7 +110,7 @@
           :key="item"
           @click="selectSuggestion(item)"
         >
-          <n-icon :component="Clock" />
+          <n-icon :component="Search" />
           <span>{{ item }}</span>
         </div>
       </div>
@@ -133,8 +133,8 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { NInput, NButton, NIcon, NSelect, NDatePicker, NTag, NSpace, NForm, NFormItem, NRadio, NRadioGroup, NDateRangePicker, useMessage } from 'naive-ui'
-import { Search, Filter, Clock } from '@vicons/ionicons5'
+import { NInput, NButton, NIcon, NSelect, NDatePicker, NTag, NSpace, NForm, NFormItem, NRadio, NRadioGroup, useMessage } from 'naive-ui'
+import { Search, Filter } from '@vicons/ionicons5'
 
 interface Props {
   statuses?: string[]
@@ -192,8 +192,8 @@ const activeFilters = computed(() => {
     filters.push({ key: 'assignee', label: `负责人=${user?.name || ''}` })
   }
   if (filterForm.value.priority) {
-    const priorityMap = { high: '高', medium: '中', low: '低' }
-    filters.push({ key: 'priority', label: `优先级=${priorityMap[filterForm.value.priority]}` })
+    const priorityMap: Record<string, string> = { high: '高', medium: '中', low: '低' }
+    filters.push({ key: 'priority', label: `优先级=${priorityMap[filterForm.value.priority] || filterForm.value.priority}` })
   }
   return filters
 })

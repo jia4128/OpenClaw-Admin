@@ -52,7 +52,7 @@ const initChart = () => {
   const total = props.data.reduce((sum, item) => sum + item.value, 0)
   legendData.value = props.data.map(item => ({
     ...item,
-    percent: total > 0 ? ((item.value / total) * 100).toFixed(1) : 0
+    percent: total > 0 ? Number(((item.value / total) * 100).toFixed(1)) : 0
   }))
   
   const option = {

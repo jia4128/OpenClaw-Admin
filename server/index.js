@@ -3,8 +3,8 @@ import cors from 'cors'
 import { createServer } from 'http'
 import { randomUUID } from 'crypto'
 import { fileURLToPath } from 'url'
-import { dirname, join, resolve, basename, extname, sep } from 'path'
-import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, rmSync, unlinkSync, stat, promises as fsPromises, createReadStream, createWriteStream, copyFileSync, readlinkSync, symlinkSync, renameSync } from 'fs'
+import { dirname, join, resolve, basename, extname, sep, dirname as pathDirname } from 'path'
+import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, rmSync, unlinkSync, stat, promises as fsPromises, createReadStream, createWriteStream, copyFileSync, readlinkSync, symlinkSync, renameSync, realpath } from 'fs'
 import { OpenClawGateway } from './gateway.js'
 import { parse } from 'dotenv'
 import os from 'os'
@@ -88,8 +88,20 @@ const hasDist = existsSync(join(distPath, 'index.html'))
 
 const sessions = new Map()
 
+// Security: CORS configuration with allowed origins
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:10001').split(',')
+
 app.use(cors({
-  origin: true,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true)
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true)
+    } else {
+      console.warn(`[CORS] Blocked origin: ${origin}`)
+      callback(new Error('Not allowed by CORS'))
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
@@ -99,6 +111,17 @@ app.use(cors({
 app.use(express.json({ limit: '1mb' })) // Prevent large payload DoS
 app.use(express.urlencoded({ extended: true, limit: '1mb' }))
 app.use(express.json())
+
+// Security: HTTP headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-Frame-Options', 'DENY')
+  res.setHeader('X-XSS-Protection', '1; mode=block')
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:")
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
+  next()
+})
 
 // Cookie parser (simple inline)
 app.use((req, res, next) => {
@@ -581,8 +604,29 @@ app.post('/api/npm/update', requireRole('admin'), async (req, res) => {
     console.log(`[Server] Updating OpenClaw via npm: ${packageSpec}`)
     
     // 执行npm更新命令
+    // Security: Whitelist for allowed packages
+    const ALLOWED_PACKAGES = ['openclaw', 'pm2', 'nodemon', 'typescript', 'tsx']
+    const packageName = packageSpec.split('@')[0]
+    if (!ALLOWED_PACKAGES.includes(packageName)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid package',
+        message: `Package '${packageName}' is not in the allowed list: ${ALLOWED_PACKAGES.join(', ')}`
+      })
+    }
+    
+    // Sanitize package spec to prevent command injection
+    const sanitizedSpec = packageSpec.replace(/[^a-zA-Z0-9@.-]/g, '')
+    if (sanitizedSpec !== packageSpec) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid package spec',
+        message: 'Package spec contains invalid characters'
+      })
+    }
+    
     const { execSync } = await import('child_process')
-    const output = execSync(`npm install -g ${packageSpec}`, {
+    const output = execSync(`npm install -g ${sanitizedSpec}`, {
       encoding: 'utf8',
       timeout: 120000 // 2分钟超时
     })
@@ -757,25 +801,44 @@ function expandHomePath(path) {
   return path
 }
 
-function safePath(userPath, workspaceBase) {
+async function safePath(userPath, workspaceBase) {
   if (!workspaceBase) return null
   
   const expandedBase = resolve(expandHomePath(workspaceBase))
   const targetPath = resolve(expandedBase, userPath || '')
   
+  // Security: Resolve symbolic links to prevent symlink attacks
+  let realPath
+  try {
+    if (await fsPromises.stat(targetPath).catch(() => null)) {
+      realPath = await fsPromises.realpath(targetPath)
+    } else {
+      // For non-existent paths, resolve the parent directory
+      const parentDir = pathDirname(targetPath)
+      if (await fsPromises.stat(parentDir).catch(() => null)) {
+        const realParentDir = await fsPromises.realpath(parentDir)
+        realPath = join(realParentDir, basename(targetPath))
+      } else {
+        realPath = targetPath
+      }
+    }
+  } catch (e) {
+    realPath = targetPath
+  }
+  
   const normalizedBase = expandedBase.toLowerCase()
-  const normalizedTarget = targetPath.toLowerCase()
+  const normalizedTarget = realPath.toLowerCase()
   
   if (!normalizedTarget.startsWith(normalizedBase)) {
     console.log('[Files] Path escape detected:', { 
       base: expandedBase, 
-      target: targetPath,
+      target: realPath,
       userPath 
     })
     return null
   }
   
-  return targetPath
+  return realPath
 }
 
 async function getAgentWorkspace(agentId) {
@@ -1372,6 +1435,15 @@ app.get('/api/terminal/stream', authMiddleware, (req, res) => {
   try {
     const shell = process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/bash'
     
+    // Security: Limit shell command execution
+    const ALLOWED_SHELLS = ['/bin/bash', '/bin/sh', '/usr/bin/zsh']
+    if (!ALLOWED_SHELLS.includes(shell)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'Shell not allowed'
+      })
+    }
     const ptyProcess = pty.spawn(shell, [], {
       name: 'xterm-256color',
       cols,
