@@ -86,6 +86,70 @@ let hermesConfig = {
   apiKey: '',
 }
 
+// Dashboard 会话 Token 缓存
+let dashboardToken = null
+let dashboardTokenExpiry = 0
+
+// 从 Dashboard HTML 页面获取临时会话 Token
+async function fetchDashboardToken(webUrl) {
+  // 检查缓存是否有效（5分钟有效期）
+  if (dashboardToken && Date.now() < dashboardTokenExpiry) {
+    return dashboardToken
+  }
+  
+  return new Promise((resolve, reject) => {
+    const targetUrl = new URL('/', webUrl)
+    console.log('[Hermes] Fetching dashboard token from:', targetUrl.toString())
+    
+    const req = http.request(
+      {
+        hostname: targetUrl.hostname,
+        port: targetUrl.port,
+        path: '/',
+        method: 'GET',
+        timeout: 5000,
+      },
+      (res) => {
+        let html = ''
+        res.on('data', (chunk) => (html += chunk))
+        res.on('end', () => {
+          // 从 HTML 中提取 Token: window.__HERMES_SESSION_TOKEN__="xxx"
+          const match = html.match(/window\.__HERMES_SESSION_TOKEN__="([^"]+)"/)
+          if (match) {
+            dashboardToken = match[1]
+            dashboardTokenExpiry = Date.now() + 5 * 60 * 1000 // 5分钟有效期
+            console.log('[Hermes] Dashboard token obtained:', dashboardToken.substring(0, 10) + '...')
+            resolve(dashboardToken)
+          } else {
+            // 检查是否有其他格式的 Token
+            const altMatch = html.match(/HERMES_SESSION_TOKEN[^>]*>([^<]+)</)
+            if (altMatch) {
+              dashboardToken = altMatch[1]
+              dashboardTokenExpiry = Date.now() + 5 * 60 * 1000
+              console.log('[Hermes] Dashboard token obtained (alt format):', dashboardToken.substring(0, 10) + '...')
+              resolve(dashboardToken)
+            } else {
+              // Token 可能不存在（Dashboard 未启用认证）
+              console.log('[Hermes] Dashboard token not found in HTML (may not be required)')
+              reject(new Error('Dashboard token not found in HTML'))
+            }
+          }
+        })
+      },
+    )
+    req.on('error', (err) => {
+      console.error('[Hermes] Failed to fetch dashboard token:', err.message)
+      reject(err)
+    })
+    req.on('timeout', () => {
+      console.error('[Hermes] Dashboard token fetch timeout')
+      req.destroy()
+      reject(new Error('Timeout'))
+    })
+    req.end()
+  })
+}
+
 // 读取 .env 文件
 function readEnvFile() {
   try {
@@ -203,7 +267,7 @@ function getHermesApiKey() {
   return hermesConfig.apiKey
 }
 
-function buildProxyHeaders(req) {
+function buildProxyHeaders(req, targetBaseUrl = '', dashboardToken = null) {
   const headers = {}
   // 转发 Content-Type
   if (req.headers['content-type']) {
@@ -215,45 +279,63 @@ function buildProxyHeaders(req) {
     console.log('[Hermes] Forwarding X-Hermes-Session-Id:', req.headers['x-hermes-session-id'])
   }
 
-  // 获取服务器配置的 API Key
-  const serverApiKey = getHermesApiKey()
-
-  // 检查请求中的 Authorization 头是否有效
-  const clientAuth = req.headers.authorization
-  const bearerMatch = clientAuth ? clientAuth.match(/^Bearer\s+(.+)$/i) : null
-  const clientToken = bearerMatch ? bearerMatch[1].trim() : null
-
-  // 如果客户端提供了有效的 token 且与服务器配置的 API Key 匹配，则使用客户端的
-  // 否则使用服务器配置的 API Key
-  if (clientToken && serverApiKey && clientToken === serverApiKey) {
-    headers['Authorization'] = `Bearer ${clientToken}`
-    console.log('[Hermes] Forwarding valid client Authorization')
-  } else if (serverApiKey) {
-    headers['Authorization'] = `Bearer ${serverApiKey}`
-    if (clientToken && clientToken !== serverApiKey) {
-      console.log('[Hermes] Client token mismatch, using server HERMES_API_KEY')
-    } else {
-      console.log('[Hermes] Using server HERMES_API_KEY for authentication')
-    }
-  } else if (clientToken) {
-    // 没有服务器配置的 API Key，但客户端提供了 token，尝试转发
-    headers['Authorization'] = `Bearer ${clientToken}`
-    console.log('[Hermes] Forwarding client Authorization (no server HERMES_API_KEY)')
+  // 判断目标是 Dashboard (9119) 还是 API Server (8642)
+  const isDashboard = targetBaseUrl.includes(':9119')
+  
+  if (isDashboard && dashboardToken) {
+    // Dashboard API 使用临时会话 Token
+    headers['Authorization'] = `Bearer ${dashboardToken}`
+    console.log('[Hermes] Using Dashboard session token for authentication')
+  } else if (isDashboard) {
+    // Dashboard 但没有 Token，尝试继续（某些端点不需要认证）
+    console.log('[Hermes] Dashboard request without token')
   } else {
-    console.log('[Hermes] WARNING: No Authorization header available')
+    // API Server 使用 HERMES_API_KEY
+    const serverApiKey = getHermesApiKey()
+    const clientAuth = req.headers.authorization
+    const bearerMatch = clientAuth ? clientAuth.match(/^Bearer\s+(.+)$/i) : null
+    const clientToken = bearerMatch ? bearerMatch[1].trim() : null
+
+    if (clientToken && serverApiKey && clientToken === serverApiKey) {
+      headers['Authorization'] = `Bearer ${clientToken}`
+      console.log('[Hermes] Forwarding valid client Authorization')
+    } else if (serverApiKey) {
+      headers['Authorization'] = `Bearer ${serverApiKey}`
+      if (clientToken && clientToken !== serverApiKey) {
+        console.log('[Hermes] Client token mismatch, using server HERMES_API_KEY')
+      } else {
+        console.log('[Hermes] Using server HERMES_API_KEY for authentication')
+      }
+    } else if (clientToken) {
+      headers['Authorization'] = `Bearer ${clientToken}`
+      console.log('[Hermes] Forwarding client Authorization (no server HERMES_API_KEY)')
+    } else {
+      console.log('[Hermes] WARNING: No Authorization header available')
+    }
   }
   return headers
 }
 
-function proxyRequest(req, res, targetBaseUrl, path) {
-  return new Promise((resolve, reject) => {
+async function proxyRequest(req, res, targetBaseUrl, path) {
+  return new Promise(async (resolve, reject) => {
     const targetUrl = new URL(path, targetBaseUrl)
     const queryString = req.originalUrl.split('?')[1]
     if (queryString) {
       targetUrl.search = queryString
     }
 
-    const headers = buildProxyHeaders(req)
+    // 判断是否是 Dashboard API，如果是则获取 Token
+    const isDashboard = targetBaseUrl.includes(':9119')
+    let token = null
+    if (isDashboard) {
+      try {
+        token = await fetchDashboardToken(targetBaseUrl)
+      } catch (err) {
+        console.log('[Hermes] Failed to get dashboard token, proceeding without it')
+      }
+    }
+
+    const headers = buildProxyHeaders(req, targetBaseUrl, token)
     const options = {
       hostname: targetUrl.hostname,
       port: targetUrl.port,
@@ -307,14 +389,25 @@ function proxyRequest(req, res, targetBaseUrl, path) {
   })
 }
 
-function proxySSEStream(req, res, targetBaseUrl, path) {
+async function proxySSEStream(req, res, targetBaseUrl, path) {
   const targetUrl = new URL(path, targetBaseUrl)
   const queryString = req.originalUrl.split('?')[1]
   if (queryString) {
     targetUrl.search = queryString
   }
 
-  const headers = buildProxyHeaders(req)
+  // 判断是否是 Dashboard API，如果是则获取 Token
+  const isDashboard = targetBaseUrl.includes(':9119')
+  let token = null
+  if (isDashboard) {
+    try {
+      token = await fetchDashboardToken(targetBaseUrl)
+    } catch (err) {
+      console.log('[Hermes] Failed to get dashboard token for SSE, proceeding without it')
+    }
+  }
+
+  const headers = buildProxyHeaders(req, targetBaseUrl, token)
   headers['Accept'] = 'text/event-stream'
   // SSE 不需要 Content-Length，使用 chunked transfer
   delete headers['Content-Length']
